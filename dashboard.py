@@ -53,7 +53,7 @@ if 'search_history' not in st.session_state:
 
 # Initialize clients
 @st.cache_resource
-def init_clients(discount_threshold, min_samples, recency_weight):
+def init_clients(discount_threshold, min_samples, recency_weight, environment):
     """Initialize eBay client and price analyzer"""
     app_id = os.getenv('EBAY_APP_ID')
     
@@ -69,7 +69,7 @@ def init_clients(discount_threshold, min_samples, recency_weight):
         st.stop()
     
     try:
-        ebay_client = eBayClient(app_id)
+        ebay_client = eBayClient(app_id, environment=environment)
         price_analyzer = PriceAnalyzer(
             discount_threshold=discount_threshold,
             min_sold_samples=min_samples,
@@ -83,6 +83,15 @@ def init_clients(discount_threshold, min_samples, recency_weight):
 # Sidebar configuration
 st.sidebar.title("🏀 Sports Card Bot")
 st.sidebar.markdown("Find underpriced sports cards on eBay")
+
+# Display environment indicator
+environment = os.getenv('EBAY_ENVIRONMENT', 'sandbox').lower()
+st.sidebar.info(f"🌐 Environment: **{environment.upper()}**")
+
+if environment == 'sandbox':
+    st.sidebar.warning("⚠️ Using sandbox (test) data. Switch to production for real listings.")
+else:
+    st.sidebar.success("✅ Using production (real) data.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Search Configuration")
@@ -162,7 +171,7 @@ st.title("🏀 Sports Card Deal Finder")
 st.markdown("Discover underpriced sports cards by comparing active listings to recent sold prices")
 
 # Initialize clients with current settings
-ebay_client, price_analyzer = init_clients(discount_threshold, min_samples, 0.7)
+ebay_client, price_analyzer = init_clients(discount_threshold, min_samples, 0.7, environment)
 
 # Update config with current settings
 config['analysis']['discount_threshold'] = discount_threshold
