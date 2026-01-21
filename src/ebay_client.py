@@ -38,6 +38,11 @@ class eBayClient:
         self.environment = environment.lower()
         self.rate_limit_per_min = rate_limit_per_min
         
+        # Validate environment
+        if self.environment not in ('sandbox', 'production'):
+            logger.warning(f"Invalid environment '{self.environment}', defaulting to 'sandbox'")
+            self.environment = 'sandbox'
+        
         # Set base URL based on environment
         if self.environment == 'sandbox':
             self.base_url = self.SANDBOX_URL
