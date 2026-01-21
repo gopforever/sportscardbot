@@ -59,7 +59,6 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
                         raise
                     logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying...")
                     time.sleep(delay * (attempt + 1))
-            return None
         return wrapper
     return decorator
 

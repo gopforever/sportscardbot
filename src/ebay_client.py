@@ -1,12 +1,13 @@
 """eBay API Client for finding and analyzing sports card listings"""
 
 import os
+import time
 import logging
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 import requests
 from urllib.parse import urlencode
-from src.utils import rate_limit, retry_on_failure
+from src.utils import retry_on_failure
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,6 @@ class eBayClient:
         self.rate_limit_per_min = rate_limit_per_min
         logger.info("eBay client initialized")
     
-    @rate_limit(calls_per_minute=50)
     @retry_on_failure(max_retries=3, delay=1.0)
     def _make_request(self, operation: str, params: Dict[str, Any]) -> Dict:
         """
@@ -48,6 +48,9 @@ class eBayClient:
         Returns:
             Parsed JSON response
         """
+        # Apply rate limiting
+        time.sleep(60.0 / self.rate_limit_per_min)
+        
         # Build request parameters
         request_params = {
             'OPERATION-NAME': operation,

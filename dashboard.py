@@ -262,10 +262,11 @@ if st.session_state.opportunities:
         )
     
     with filter_col2:
+        max_discount_value = int(all_opportunities['discount_pct'].max()) if not all_opportunities.empty else 100
         min_discount_filter = st.slider(
             "Min Discount (%)",
             min_value=0,
-            max_value=int(all_opportunities['discount_pct'].max()),
+            max_value=max_discount_value,
             value=0
         )
     
@@ -295,7 +296,7 @@ if st.session_state.opportunities:
                 if row['image_url']:
                     try:
                         st.image(row['image_url'], use_container_width=True)
-                    except:
+                    except Exception:
                         st.info("Image not available")
                 else:
                     st.info("No image")
