@@ -1,0 +1,50 @@
+# Sports Card Bot Configuration
+
+search:
+  # Search keywords - customize to your preferences
+  keywords:
+    - "Michael Jordan PSA 10"
+    - "LeBron James rookie"
+    - "Tom Brady rookie PSA"
+  
+  # eBay category IDs for sports cards
+  categories:
+    - "212"  # Sports Trading Cards
+  
+  # Search type: all, auction, or fixed
+  listing_type: "all"
+
+analysis:
+  # Minimum discount percentage to flag as deal (e.g., 20 = 20% below market)
+  discount_threshold: 20
+  
+  # Number of days to look back for sold listings
+  sold_days: 30
+  
+  # Minimum number of sold items needed for reliable market value
+  min_sold_samples: 5
+  
+  # Weight for recent sales (higher = more weight on recent)
+  recency_weight: 0.7
+
+filters:
+  # Price range to search within
+  min_price: 10
+  max_price: 1000
+  
+  # Card condition (leave empty for all)
+  # Options: "New", "Used", "Not Specified"
+  condition: ""
+  
+  # Only show graded cards
+  graded_only: false
+
+api:
+  # Maximum results per search
+  max_results: 100
+  
+  # Cache duration in minutes
+  cache_duration: 30
+  
+  # Rate limiting - requests per minute
+  rate_limit: 50
