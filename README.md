@@ -50,6 +50,38 @@ Sports Card Bot helps collectors and traders discover underpriced sports cards o
 
 > **Note:** For basic functionality, you only need the **App ID**. The Cert ID and Dev ID are for advanced features.
 
+### 1.5. Sandbox vs Production
+
+eBay provides two environments for testing and production use:
+
+**🧪 Sandbox Environment:**
+- For testing and development
+- Works immediately after getting API keys
+- Uses test/simulated data (not real eBay listings)
+- No approval process required
+- Perfect for testing the bot's functionality
+
+**🚀 Production Environment:**
+- Real eBay data and listings
+- Requires eBay approval (typically 1-3 business days)
+- Use for actual card price analysis
+- Switch after testing is complete
+
+**Getting Started with Sandbox:**
+
+1. Go to https://developer.ebay.com/my/keys
+2. Get your **Sandbox** keys (available immediately under "Sandbox Keys")
+3. Add to `.env`: `EBAY_ENVIRONMENT=sandbox`
+4. Test the bot with sandbox data
+
+**Upgrading to Production:**
+
+1. Request production access at https://developer.ebay.com/my/keys
+2. Wait for eBay approval (1-3 business days)
+3. Update `.env` with production keys
+4. Change `EBAY_ENVIRONMENT=production`
+5. Restart bot for real eBay data
+
 ### 2. Installation
 
 ```bash
@@ -72,6 +104,7 @@ Edit the `.env` file with your eBay API credentials:
 EBAY_APP_ID=your_actual_app_id_here
 EBAY_CERT_ID=your_cert_id_here
 EBAY_DEV_ID=your_dev_id_here
+EBAY_ENVIRONMENT=sandbox
 ```
 
 ⚠️ **Security Note:** Never commit your `.env` file to version control!
@@ -174,6 +207,7 @@ The dashboard will open in your browser at `http://localhost:8501`
 | `EBAY_APP_ID` | Yes | eBay Application ID (App ID) |
 | `EBAY_CERT_ID` | No | eBay Certificate ID (for advanced features) |
 | `EBAY_DEV_ID` | No | eBay Developer ID (for advanced features) |
+| `EBAY_ENVIRONMENT` | No | API environment: `sandbox` or `production` (default: `sandbox`) |
 
 ## 📁 Project Structure
 
@@ -200,6 +234,16 @@ sportscardbot/
 1. Created a `.env` file (copy from `.env.example`)
 2. Added your actual `EBAY_APP_ID` from eBay Developer portal
 3. Restarted the Streamlit app
+
+### "500 Internal Server Error" or Production API errors
+
+**Solution:**
+- Production API access requires eBay approval (1-3 business days)
+- Switch to sandbox environment while waiting for approval:
+  1. Set `EBAY_ENVIRONMENT=sandbox` in `.env`
+  2. Use sandbox API keys from eBay Developer portal
+  3. Restart the app
+- Once production access is approved, switch back to `EBAY_ENVIRONMENT=production`
 
 ### "No opportunities found"
 

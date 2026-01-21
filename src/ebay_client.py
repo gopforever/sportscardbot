@@ -19,22 +19,32 @@ class eBayClient:
     Documentation: https://developer.ebay.com/devzone/finding/Concepts/FindingAPIGuide.html
     """
     
-    BASE_URL = "https://svcs.ebay.com/services/search/FindingService/v1"
+    PRODUCTION_URL = "https://svcs.ebay.com/services/search/FindingService/v1"
+    SANDBOX_URL = "https://svcs.sandbox.ebay.com/services/search/FindingService/v1"
     
-    def __init__(self, app_id: str, rate_limit_per_min: int = 50):
+    def __init__(self, app_id: str, environment: str = 'sandbox', rate_limit_per_min: int = 50):
         """
         Initialize eBay client
         
         Args:
             app_id: eBay Application ID (API key)
+            environment: API environment ('sandbox' or 'production')
             rate_limit_per_min: Maximum API calls per minute
         """
         if not app_id or app_id == "your_app_id_here":
             raise ValueError("Valid eBay APP ID is required. Please set EBAY_APP_ID in .env file")
         
         self.app_id = app_id
+        self.environment = environment.lower()
         self.rate_limit_per_min = rate_limit_per_min
-        logger.info("eBay client initialized")
+        
+        # Set base URL based on environment
+        if self.environment == 'sandbox':
+            self.base_url = self.SANDBOX_URL
+        else:
+            self.base_url = self.PRODUCTION_URL
+        
+        logger.info(f"eBay client initialized ({self.environment} environment)")
     
     @retry_on_failure(max_retries=3, delay=1.0)
     def _make_request(self, operation: str, params: Dict[str, Any]) -> Dict:
@@ -63,7 +73,7 @@ class eBayClient:
         
         try:
             response = requests.get(
-                self.BASE_URL,
+                self.base_url,
                 params=request_params,
                 timeout=30
             )
@@ -79,6 +89,17 @@ class eBayClient:
             
             return data
             
+        except requests.exceptions.HTTPError as e:
+            # Handle 500 errors with helpful message
+            if e.response.status_code == 500 and self.environment == 'production':
+                error_msg = (
+                    "Production API access may not be approved yet. "
+                    "Try using sandbox environment by setting EBAY_ENVIRONMENT=sandbox in .env"
+                )
+                logger.error(error_msg)
+                raise Exception(error_msg) from e
+            logger.error(f"Request failed: {str(e)}")
+            raise
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
             raise
