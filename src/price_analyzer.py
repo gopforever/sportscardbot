@@ -294,25 +294,41 @@ class PriceAnalyzer:
         Returns:
             DataFrame with opportunities sorted by discount percentage
         """
+        # Build simple search query from config filters
+        query_parts = []
+        
+        # Add keyword
+        if keyword and keyword.strip():
+            query_parts.append(keyword.strip())
+        
+        # Add other filters from config to build a more specific query
+        if config.get('search', {}).get('player'):
+            query_parts.append(config['search']['player'])
+        if config.get('search', {}).get('year'):
+            query_parts.append(str(config['search']['year']))
+        if config.get('search', {}).get('set'):
+            query_parts.append(config['search']['set'])
+        if config.get('search', {}).get('sport'):
+            query_parts.append(config['search']['sport'])
+        
+        # Join all parts into a single query
+        query = ' '.join(query_parts)
+        
+        if not query:
+            logger.warning("Empty query generated from keyword and config")
+            return pd.DataFrame()
+        
         # Search for cards
         cards = client.search_cards(
-            query=keyword,
-            sport=config.get('search', {}).get('sport'),
-            player=config.get('search', {}).get('player'),
-            year=config.get('search', {}).get('year'),
-            card_set=config.get('search', {}).get('set'),
-            grade=config.get('filters', {}).get('grade'),
-            grading_company=config.get('filters', {}).get('grading_company'),
-            min_price=config.get('filters', {}).get('min_price'),
-            max_price=config.get('filters', {}).get('max_price'),
-            limit=config.get('api', {}).get('max_results', 100)
+            query=query,
+            limit=config.get('api', {}).get('max_results', 20)
         )
         
         if not cards:
-            logger.warning(f"No cards found for keyword: {keyword}")
+            logger.warning(f"No cards found for query: {query}")
             return pd.DataFrame()
         
-        logger.info(f"Found {len(cards)} cards for keyword: {keyword}")
+        logger.info(f"Found {len(cards)} cards for query: {query}")
         
         # Analyze each card for opportunities
         opportunities = []
@@ -369,7 +385,7 @@ class PriceAnalyzer:
         
         # Create DataFrame
         if not opportunities:
-            logger.info(f"No opportunities found for keyword: {keyword}")
+            logger.info(f"No opportunities found for query: {query}")
             return pd.DataFrame()
         
         df = pd.DataFrame(opportunities)
@@ -377,7 +393,7 @@ class PriceAnalyzer:
         # Sort by discount percentage
         df = df.sort_values('discount_pct', ascending=False)
         
-        logger.info(f"Found {len(df)} opportunities for keyword: {keyword}")
+        logger.info(f"Found {len(df)} opportunities for query: {query}")
         
         return df
     
