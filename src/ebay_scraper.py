@@ -1,5 +1,6 @@
 """eBay Web Scraper for finding card listings"""
 
+import re
 import time
 import logging
 import requests
@@ -19,6 +20,8 @@ class eBayScraper:
     """
     
     BASE_URL = "https://www.ebay.com"
+    # Regex pattern for extracting shipping costs
+    SHIPPING_PRICE_PATTERN = re.compile(r'\$?([\d,]+\.?\d*)')
     
     def __init__(self, delay_between_requests: float = 2.0):
         """
@@ -229,11 +232,10 @@ class eBayScraper:
         
         try:
             # Extract number from text like '+$5.00 shipping'
-            import re
-            match = re.search(r'\$?([\d,]+\.?\d*)', shipping_text)
+            match = self.SHIPPING_PRICE_PATTERN.search(shipping_text)
             if match:
                 return float(match.group(1).replace(',', ''))
-        except:
-            pass
+        except (ValueError, AttributeError, IndexError) as e:
+            logger.debug(f"Failed to parse shipping cost from '{shipping_text}': {e}")
         
         return 0.0

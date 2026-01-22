@@ -406,7 +406,7 @@ if st.session_state.opportunities:
                         'median_sold_price': opp.get('market_value', 0),
                         'discount_pct': opp.get('discount_pct', 0),
                         'potential_profit': opp.get('potential_profit', 0),
-                        'profit_margin': (opp.get('potential_profit', 0) / opp.get('listing_price', 1)) * 100 if opp.get('listing_price', 0) > 0 else 0,
+                        'profit_margin': (opp.get('potential_profit', 0) / opp['listing_price']) * 100 if opp.get('listing_price', 0) > 0 else 0.0,
                         'url': listing.get('url', ''),
                         'image_url': listing.get('image_url', ''),
                         'condition': listing.get('condition', 'Unknown'),

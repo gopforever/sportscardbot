@@ -14,6 +14,9 @@ class PriceAnalyzer:
     Analyzes sports card prices to identify underpriced opportunities
     """
     
+    # Maximum price multiplier for scraping (1.2 = 120% of market value)
+    MAX_SCRAPE_PRICE_MULTIPLIER = 1.2
+    
     def __init__(
         self,
         discount_threshold: float = 20.0,
@@ -430,10 +433,10 @@ class PriceAnalyzer:
             # Build eBay search query from Sports Card Pro card
             ebay_query = f"{scp_card.get('player', '')} {scp_card.get('set', '')}"
             
-            # Scrape eBay
+            # Scrape eBay - only check listings reasonably priced
             ebay_listings = ebay_scraper.search_listings(
                 query=ebay_query,
-                max_price=scp_card.get('market_value', 0) * 1.2,  # Only check listings reasonably priced
+                max_price=scp_card.get('market_value', 0) * self.MAX_SCRAPE_PRICE_MULTIPLIER,
                 limit=20
             )
             
