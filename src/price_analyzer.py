@@ -17,6 +17,13 @@ class PriceAnalyzer:
     # Maximum price multiplier for scraping (1.2 = 120% of market value)
     MAX_SCRAPE_PRICE_MULTIPLIER = 1.2
     
+    # Match score thresholds and weights
+    MIN_MATCH_SCORE_THRESHOLD = 0.3  # 30% minimum match to consider an opportunity
+    PLAYER_MATCH_WEIGHT = 0.5  # Player name is most important
+    SET_MATCH_WEIGHT = 0.3  # Set name is second most important
+    YEAR_MATCH_WEIGHT = 0.2  # Year is third most important
+    CARD_TERM_BONUS_WEIGHT = 0.05  # Bonus per matching card term
+    
     def __init__(
         self,
         discount_threshold: float = 20.0,
@@ -430,10 +437,11 @@ class PriceAnalyzer:
         
         # 2. Instead of searching eBay for each individual card,
         #    use the original query for eBay (which is already specific)
-        logger.info(f"Scraping eBay with original query: {query}")
+        optimized_query = self._build_ebay_query(query)
+        logger.info(f"Scraping eBay with optimized query: {optimized_query}")
         
         ebay_listings = ebay_scraper.search_listings(
-            query=query,
+            query=optimized_query,
             limit=30
         )
         
@@ -463,7 +471,7 @@ class PriceAnalyzer:
                     best_match = scp_card
             
             # If we found a reasonable match, compare prices
-            if best_match and best_match_score > 0.3:  # 30% match threshold
+            if best_match and best_match_score > self.MIN_MATCH_SCORE_THRESHOLD:
                 market_value = best_match.get('market_value', 0)
                 
                 if market_value == 0:
@@ -577,20 +585,20 @@ class PriceAnalyzer:
         
         # Check for player name (most important)
         if player and player in listing_title:
-            score += 0.5
+            score += self.PLAYER_MATCH_WEIGHT
         
         # Check for set name
         if card_set and any(word in listing_title for word in card_set.split()):
-            score += 0.3
+            score += self.SET_MATCH_WEIGHT
         
         # Check for year
         if year and year in listing_title:
-            score += 0.2
+            score += self.YEAR_MATCH_WEIGHT
         
         # Bonus: Check for card-specific terms
         card_terms = ['card', 'rookie', 'rc', 'prizm', 'chrome', 'topps', 'panini', 'fleer', 'psa', 'bgs']
         matching_terms = sum(1 for term in card_terms if term in listing_title)
-        score += min(matching_terms * 0.05, 0.2)  # Up to 0.2 bonus
+        score += min(matching_terms * self.CARD_TERM_BONUS_WEIGHT, 0.2)  # Up to 0.2 bonus
         
         return min(score, 1.0)  # Cap at 1.0
     

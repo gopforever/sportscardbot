@@ -22,6 +22,8 @@ class eBayScraper:
     BASE_URL = "https://www.ebay.com"
     # Regex pattern for extracting shipping costs
     SHIPPING_PRICE_PATTERN = re.compile(r'\$?([\d,]+\.?\d*)')
+    # Keywords to exclude from searches (non-sports card items)
+    EXCLUDED_KEYWORDS = ['funko', 'pop', 'magic', 'pokemon', 'yugioh', 'comic', 'game', 'jersey']
     
     def __init__(self, delay_between_requests: float = 2.0):
         """
@@ -91,7 +93,9 @@ class eBayScraper:
         
         # Filter to sports trading cards specifically
         url += "&_in_kw=1"  # Search in keywords
-        url += "&_ex_kw=funko+pop+magic+pokemon+yugioh+comic+game+jersey"  # Exclude non-cards
+        # Encode excluded keywords properly
+        excluded = '+'.join(quote_plus(kw) for kw in self.EXCLUDED_KEYWORDS)
+        url += f"&_ex_kw={excluded}"  # Exclude non-cards
         
         # Add filters
         if buy_it_now_only:
