@@ -15,12 +15,14 @@ Sports Card Bot helps collectors and traders discover underpriced sports cards b
 ### Core Functionality
 - 🎯 **Sports Card Pro Integration** - Official Sports Card Pro API for accurate market values
 - 📦 **eBay Integration (Legacy)** - Optional eBay Finding API support
+- 🕷️ **eBay Web Scraping** - Optional web scraping to find arbitrage opportunities (personal use only)
 - 📊 **Price Analysis** - Calculates market value and identifies underpriced opportunities
 - 💰 **Profit Calculator** - Shows potential profit and margins for each opportunity
 - 📈 **Interactive Dashboard** - Streamlit-based web interface with charts and filters
 
 ### Dashboard Features
 - Dual API support: Sports Card Pro (recommended) or eBay (legacy)
+- Optional eBay web scraping for arbitrage opportunities
 - Sports-specific filters: sport, player, year, set, grade, grading company
 - Card image thumbnails
 - Price comparison metrics (active price vs. market value)
@@ -249,6 +251,92 @@ In the dashboard sidebar:
 - More sold days = more reliable data but less responsive to trends
 - Higher min samples = more reliable but may miss opportunities
 
+## 🕷️ eBay Web Scraping
+
+This tool includes an optional eBay web scraping feature to find underpriced cards by comparing eBay listings against Sports Card Pro market values.
+
+### Important Notes
+
+- ✅ **For personal use only**
+- ✅ **Rate-limited** to be respectful of eBay's servers (2-second delay between requests)
+- ⚠️ **eBay's Terms of Service** technically prohibit automated scraping
+- ⚠️ **Could be blocked** if used aggressively or at high volumes
+- ⚠️ **Not for commercial resale** or high-volume automated trading
+- ⚠️ **Use at your own risk** - understand the legal implications
+
+### How It Works
+
+1. **Gets market values** from Sports Card Pro API for specific cards
+2. **Scrapes eBay** for current Buy It Now listings of those cards
+3. **Compares** eBay listing prices vs Sports Card Pro market values
+4. **Identifies** cards listed significantly below market value
+5. **Displays** opportunities in the dashboard with discount percentages
+
+### Enabling eBay Scraping
+
+1. Select **Sports Card Pro** as your API source in the dashboard
+2. Check the **"Enable eBay Scraping"** option in the sidebar
+3. Configure your search (player, sport, year, set, etc.)
+4. Click "Search for Deals"
+5. The bot will:
+   - Query Sports Card Pro for market values
+   - Scrape eBay for current listings
+   - Compare prices and show arbitrage opportunities
+
+### Respectful Usage
+
+The scraper is designed to be respectful:
+- **2-second delay** between requests (configurable)
+- **Limited to 50 results** per search by default
+- **Proper User-Agent headers** to identify as a browser
+- **Error handling** for when eBay changes HTML structure
+- **Rate limiting** prevents aggressive scraping
+
+### What Gets Scraped
+
+From each eBay listing, the scraper extracts:
+- Title
+- Price (Buy It Now)
+- Shipping cost
+- Condition
+- Item URL
+- Image URL
+
+### Legal & Ethical Considerations
+
+**Important Legal Notice:**
+- Web scraping may violate eBay's Terms of Service
+- This feature is provided for **educational and personal use only**
+- Do not use for commercial purposes or automated trading
+- Do not use at high volumes that could burden eBay's servers
+- The authors are not responsible for any misuse or consequences
+
+**Best Practices:**
+- Use sparingly and only for personal research
+- Don't scrape more frequently than necessary
+- Don't scrape large volumes of data
+- Respect eBay's robots.txt file
+- Consider the ethical implications of automated scraping
+
+### Troubleshooting Scraping
+
+**"No listings found" when scraping:**
+- eBay may have changed their HTML structure
+- Your IP may be temporarily blocked (wait and try again later)
+- Try a different search query
+- Disable scraping and use Sports Card Pro data only
+
+**Slow performance:**
+- The 2-second delay between requests is intentional
+- This is necessary to avoid being blocked by eBay
+- Be patient - each search query takes time
+
+**Blocked by eBay:**
+- Wait several hours before trying again
+- Reduce scraping frequency
+- Consider using a VPN (though this may violate ToS)
+- Switch to Sports Card Pro only mode (no scraping)
+
 ## ⚙️ Configuration Reference
 
 ### config.yaml Parameters
@@ -299,6 +387,7 @@ sportscardbot/
 │   ├── __init__.py               # Package initialization
 │   ├── sportscardpro_client.py  # Sports Card Pro API wrapper
 │   ├── ebay_client.py            # eBay API wrapper (legacy)
+│   ├── ebay_scraper.py           # eBay web scraper (optional)
 │   ├── price_analyzer.py         # Price analysis engine
 │   └── utils.py                  # Utility functions
 ```

@@ -14,6 +14,9 @@ class PriceAnalyzer:
     Analyzes sports card prices to identify underpriced opportunities
     """
     
+    # Maximum price multiplier for scraping (1.2 = 120% of market value)
+    MAX_SCRAPE_PRICE_MULTIPLIER = 1.2
+    
     def __init__(
         self,
         discount_threshold: float = 20.0,
@@ -396,6 +399,76 @@ class PriceAnalyzer:
         logger.info(f"Found {len(df)} opportunities for query: {query}")
         
         return df
+    
+    def analyze_with_scraping(
+        self,
+        sportscardpro_client,
+        ebay_scraper,
+        query: str
+    ) -> Dict[str, List[Dict]]:
+        """
+        Find arbitrage opportunities using Sports Card Pro + eBay scraping
+        
+        Args:
+            sportscardpro_client: Sports Card Pro API client
+            ebay_scraper: eBay web scraper
+            query: Search query
+        
+        Returns:
+            Dictionary with opportunities
+        """
+        logger.info(f"Analyzing arbitrage for: {query}")
+        
+        opportunities = []
+        
+        # 1. Get market values from Sports Card Pro
+        scp_cards = sportscardpro_client.search_cards(query=query, limit=20)
+        
+        if not scp_cards:
+            logger.warning(f"No Sports Card Pro data found for: {query}")
+            return {'opportunities': []}
+        
+        # 2. For each card, scrape eBay for current listings
+        for scp_card in scp_cards:
+            # Build eBay search query from Sports Card Pro card
+            ebay_query = f"{scp_card.get('player', '')} {scp_card.get('set', '')}"
+            
+            # Scrape eBay - only check listings reasonably priced
+            ebay_listings = ebay_scraper.search_listings(
+                query=ebay_query,
+                max_price=scp_card.get('market_value', 0) * self.MAX_SCRAPE_PRICE_MULTIPLIER,
+                limit=20
+            )
+            
+            # 3. Compare each eBay listing to Sports Card Pro market value
+            for listing in ebay_listings:
+                market_value = scp_card.get('market_value', 0)
+                
+                if market_value == 0:
+                    continue
+                
+                listing_price = listing.get('total_cost', 0)
+                
+                # Calculate discount
+                discount_pct = ((market_value - listing_price) / market_value) * 100
+                
+                if discount_pct >= self.discount_threshold:
+                    opportunities.append({
+                        'listing': listing,
+                        'market_data': scp_card,
+                        'market_value': market_value,
+                        'listing_price': listing_price,
+                        'discount_pct': discount_pct,
+                        'potential_profit': market_value - listing_price,
+                        'query': query
+                    })
+        
+        # Sort by discount percentage
+        opportunities.sort(key=lambda x: x['discount_pct'], reverse=True)
+        
+        logger.info(f"Found {len(opportunities)} opportunities for: {query}")
+        
+        return {'opportunities': opportunities}
     
     def get_summary_stats(self, opportunities_df: pd.DataFrame) -> Dict:
         """

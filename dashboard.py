@@ -144,6 +144,23 @@ if api_source == 'ebay':
 else:
     st.sidebar.success("✅ Using Sports Card Pro API")
 
+# eBay Web Scraping Option (only for Sports Card Pro mode)
+use_ebay_scraping = False
+ebay_scraper = None
+if api_source == 'sportscardpro':
+    st.sidebar.markdown("---")
+    use_ebay_scraping = st.sidebar.checkbox(
+        "Enable eBay Scraping",
+        value=False,
+        help="Scrape eBay for current listings and compare to Sports Card Pro market values"
+    )
+    
+    if use_ebay_scraping:
+        st.sidebar.info("⚠️ Web scraping is for personal use only. Be respectful of eBay's servers.")
+        # Initialize scraper
+        from src.ebay_scraper import eBayScraper
+        ebay_scraper = eBayScraper(delay_between_requests=2.0)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("Search Configuration")
 
@@ -324,10 +341,26 @@ if search_button:
             st.warning("Please enter at least one search keyword")
     else:
         search_source = "Sports Card Pro" if api_source == 'sportscardpro' else "eBay"
+        if use_ebay_scraping and ebay_scraper:
+            search_source += " + eBay Scraping"
+        
         with st.spinner(f"Searching {search_source} and analyzing prices..."):
             try:
-                # Run analysis
-                results = price_analyzer.analyze_by_keyword(keywords, client, config)
+                # Run analysis based on mode
+                if use_ebay_scraping and ebay_scraper and api_source == 'sportscardpro':
+                    # Use hybrid approach: Sports Card Pro + eBay scraping
+                    results = {}
+                    for query in keywords:
+                        result = price_analyzer.analyze_with_scraping(
+                            sportscardpro_client=client,
+                            ebay_scraper=ebay_scraper,
+                            query=query
+                        )
+                        if result.get('opportunities'):
+                            results[query] = result
+                else:
+                    # Use standard approach (Sports Card Pro only or eBay API)
+                    results = price_analyzer.analyze_by_keyword(keywords, client, config)
                 
                 # Store results
                 st.session_state.opportunities = results
@@ -337,7 +370,7 @@ if search_button:
                     st.session_state.search_history.append({
                         'timestamp': datetime.now(),
                         'keywords': keywords,
-                        'deals_found': sum(len(df) for df in results.values())
+                        'deals_found': sum(len(df) if isinstance(df, pd.DataFrame) else len(df.get('opportunities', [])) for df in results.values())
                     })
                 
                 st.success(f"Search completed! Found opportunities for {len(results)} keywords")
@@ -348,95 +381,142 @@ if search_button:
 
 # Display results
 if st.session_state.opportunities:
-    # Combine all opportunities
-    all_opportunities = pd.concat(
-        st.session_state.opportunities.values(),
-        ignore_index=True
-    )
+    # Combine all opportunities - handle both DataFrame and dict formats
+    all_opportunities_list = []
     
-    # Summary metrics
-    st.markdown("### 📊 Summary")
-    col1, col2, col3, col4 = st.columns(4)
+    for query, result in st.session_state.opportunities.items():
+        if isinstance(result, pd.DataFrame):
+            # Standard DataFrame format
+            all_opportunities_list.append(result)
+        elif isinstance(result, dict) and 'opportunities' in result:
+            # Scraping format - convert to DataFrame
+            opps = result['opportunities']
+            if opps:
+                # Flatten the nested structure
+                flattened = []
+                for opp in opps:
+                    listing = opp.get('listing', {})
+                    market_data = opp.get('market_data', {})
+                    
+                    flattened.append({
+                        'title': listing.get('title', 'Unknown'),
+                        'active_price': opp.get('listing_price', 0),
+                        'market_value': opp.get('market_value', 0),
+                        'avg_sold_price': opp.get('market_value', 0),
+                        'median_sold_price': opp.get('market_value', 0),
+                        'discount_pct': opp.get('discount_pct', 0),
+                        'potential_profit': opp.get('potential_profit', 0),
+                        'profit_margin': (opp.get('potential_profit', 0) / opp['listing_price']) * 100 if opp.get('listing_price', 0) > 0 else 0.0,
+                        'url': listing.get('url', ''),
+                        'image_url': listing.get('image_url', ''),
+                        'condition': listing.get('condition', 'Unknown'),
+                        'seller': listing.get('marketplace', 'eBay'),
+                        'listing_type': 'Buy It Now',
+                        'sold_comps': 0,
+                        'price_std_dev': 0,
+                        'player': market_data.get('player', ''),
+                        'sport': market_data.get('sport', ''),
+                        'year': market_data.get('year', ''),
+                        'set': market_data.get('set', ''),
+                        'card_number': market_data.get('card_number', ''),
+                        'shipping_cost': listing.get('shipping_cost', 0),
+                        'source': 'eBay Scraper'
+                    })
+                
+                if flattened:
+                    all_opportunities_list.append(pd.DataFrame(flattened))
     
-    stats = price_analyzer.get_summary_stats(all_opportunities)
+    if all_opportunities_list:
+        all_opportunities = pd.concat(all_opportunities_list, ignore_index=True)
+    else:
+        all_opportunities = pd.DataFrame()
     
-    col1.metric("Total Deals", stats['total_deals'])
-    col2.metric("Avg Discount", f"{stats['avg_discount']:.1f}%")
-    col3.metric("Avg Profit", format_currency(stats['avg_potential_profit']))
-    col4.metric("Total Profit Potential", format_currency(stats['total_potential_profit']))
-    
-    # Charts
-    st.markdown("### 📈 Analytics")
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        # Discount distribution
-        fig_discount = px.histogram(
-            all_opportunities,
-            x='discount_pct',
-            nbins=20,
-            title='Discount Distribution',
-            labels={'discount_pct': 'Discount %', 'count': 'Number of Deals'}
-        )
-        st.plotly_chart(fig_discount, use_container_width=True)
-    
-    with chart_col2:
-        # Profit potential distribution
-        fig_profit = px.histogram(
-            all_opportunities,
-            x='potential_profit',
-            nbins=20,
-            title='Profit Potential Distribution',
-            labels={'potential_profit': 'Potential Profit ($)', 'count': 'Number of Deals'}
-        )
-        st.plotly_chart(fig_profit, use_container_width=True)
-    
-    # Opportunities table
-    st.markdown("### 🎯 Opportunities")
-    
-    # Filter options
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    with filter_col1:
-        sort_by = st.selectbox(
-            "Sort by",
-            options=['discount_pct', 'potential_profit', 'active_price'],
-            format_func=lambda x: {
-                'discount_pct': 'Discount %',
-                'potential_profit': 'Profit Potential',
-                'active_price': 'Price'
-            }[x]
-        )
-    
-    with filter_col2:
-        max_discount_value = int(all_opportunities['discount_pct'].max()) if not all_opportunities.empty else 100
-        min_discount_filter = st.slider(
-            "Min Discount (%)",
-            min_value=0,
-            max_value=max_discount_value,
-            value=0
-        )
-    
-    with filter_col3:
-        search_text = st.text_input("Search in titles", "")
-    
-    # Apply filters
-    filtered_df = all_opportunities.copy()
-    if min_discount_filter > 0:
-        filtered_df = filtered_df[filtered_df['discount_pct'] >= min_discount_filter]
-    if search_text:
-        filtered_df = filtered_df[
-            filtered_df['title'].str.contains(search_text, case=False, na=False)
-        ]
-    
-    # Sort
-    filtered_df = filtered_df.sort_values(sort_by, ascending=False)
-    
-    st.info(f"Showing {len(filtered_df)} of {len(all_opportunities)} opportunities")
-    
-    # Display cards
-    for idx, row in filtered_df.iterrows():
-        with st.expander(f"**{row['title'][:80]}...** - {row['discount_pct']:.1f}% off"):
-            card_col1, card_col2 = st.columns([1, 2])
+    if all_opportunities.empty:
+        st.info("No opportunities found. Try adjusting your search parameters or filters.")
+    else:
+        # Summary metrics
+        st.markdown("### 📊 Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        stats = price_analyzer.get_summary_stats(all_opportunities)
+        
+        col1.metric("Total Deals", stats['total_deals'])
+        col2.metric("Avg Discount", f"{stats['avg_discount']:.1f}%")
+        col3.metric("Avg Profit", format_currency(stats['avg_potential_profit']))
+        col4.metric("Total Profit Potential", format_currency(stats['total_potential_profit']))
+        
+        # Charts
+        st.markdown("### 📈 Analytics")
+        chart_col1, chart_col2 = st.columns(2)
+        
+        with chart_col1:
+            # Discount distribution
+            fig_discount = px.histogram(
+                all_opportunities,
+                x='discount_pct',
+                nbins=20,
+                title='Discount Distribution',
+                labels={'discount_pct': 'Discount %', 'count': 'Number of Deals'}
+            )
+            st.plotly_chart(fig_discount, use_container_width=True)
+        
+        with chart_col2:
+            # Profit potential distribution
+            fig_profit = px.histogram(
+                all_opportunities,
+                x='potential_profit',
+                nbins=20,
+                title='Profit Potential Distribution',
+                labels={'potential_profit': 'Potential Profit ($)', 'count': 'Number of Deals'}
+            )
+            st.plotly_chart(fig_profit, use_container_width=True)
+        
+        # Opportunities table
+        st.markdown("### 🎯 Opportunities")
+        
+        # Filter options
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        with filter_col1:
+            sort_by = st.selectbox(
+                "Sort by",
+                options=['discount_pct', 'potential_profit', 'active_price'],
+                format_func=lambda x: {
+                    'discount_pct': 'Discount %',
+                    'potential_profit': 'Profit Potential',
+                    'active_price': 'Price'
+                }[x]
+            )
+        
+        with filter_col2:
+            max_discount_value = int(all_opportunities['discount_pct'].max()) if not all_opportunities.empty else 100
+            min_discount_filter = st.slider(
+                "Min Discount (%)",
+                min_value=0,
+                max_value=max_discount_value,
+                value=0
+            )
+        
+        with filter_col3:
+            search_text = st.text_input("Search in titles", "")
+        
+        # Apply filters
+        filtered_df = all_opportunities.copy()
+        if min_discount_filter > 0:
+            filtered_df = filtered_df[filtered_df['discount_pct'] >= min_discount_filter]
+        if search_text:
+            filtered_df = filtered_df[
+                filtered_df['title'].str.contains(search_text, case=False, na=False)
+            ]
+        
+        # Sort
+        filtered_df = filtered_df.sort_values(sort_by, ascending=False)
+        
+        st.info(f"Showing {len(filtered_df)} of {len(all_opportunities)} opportunities")
+        
+        # Display cards
+        for idx, row in filtered_df.iterrows():
+            with st.expander(f"**{row['title'][:80]}...** - {row['discount_pct']:.1f}% off"):
+                card_col1, card_col2 = st.columns([1, 2])
             
             with card_col1:
                 if row['image_url']:
@@ -479,21 +559,31 @@ if st.session_state.opportunities:
                 metric_col5.metric("Profit Margin", f"{row['profit_margin']:.1f}%")
                 metric_col6.metric("Sold Comps", int(row['sold_comps']))
                 
+                # Show shipping cost if available (for scraped listings)
+                if 'shipping_cost' in row and row['shipping_cost'] > 0:
+                    st.caption(f"💰 Shipping: {format_currency(row['shipping_cost'])}")
+                
                 # Link based on source
                 if row['url']:
-                    link_text = "🔗 View Card" if api_source == 'sportscardpro' else "🔗 View on eBay"
+                    # Check if this is a scraped eBay listing or regular listing
+                    if 'source' in row and row['source'] == 'eBay Scraper':
+                        link_text = "🔗 View on eBay (Scraped)"
+                    elif api_source == 'sportscardpro':
+                        link_text = "🔗 View Card"
+                    else:
+                        link_text = "🔗 View on eBay"
                     st.markdown(f"[{link_text}]({row['url']})")
-    
-    # Export button
-    st.markdown("---")
-    csv = filtered_df.to_csv(index=False)
-    st.download_button(
-        label="📥 Export to CSV",
-        data=csv,
-        file_name=f"sports_card_deals_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+        
+        # Export button
+        st.markdown("---")
+        csv = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Export to CSV",
+            data=csv,
+            file_name=f"sports_card_deals_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
 else:
     # Welcome screen
