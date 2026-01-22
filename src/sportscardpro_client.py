@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 class SportsCardProClient:
     """
-    Wrapper for Sports Card Pro API
+    Wrapper for Sports Card Pro API (via PriceCharting.com)
     
-    Documentation: https://www.sportscardspro.com/api-documentation
+    Documentation: https://www.pricecharting.com/api-documentation
     """
     
     BASE_URL = "https://www.pricecharting.com/api"
@@ -25,7 +25,7 @@ class SportsCardProClient:
         Initialize Sports Card Pro client
         
         Args:
-            api_key: Sports Card Pro API key
+            api_key: PriceCharting.com API key (from Sports Card Pro)
             rate_limit_per_min: Maximum API calls per minute
         """
         if not api_key or api_key == "your_api_key_here":
@@ -232,6 +232,8 @@ class SportsCardProClient:
         
         try:
             # Sales history is included in the product endpoint
+            # Note: days_back and limit parameters are kept for backwards compatibility
+            # but are not currently used by the PriceCharting API
             params = {'id': card_id}
             response = self._make_request('product', params)
             
