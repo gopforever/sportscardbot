@@ -1,6 +1,7 @@
 """Sports Card Pro API Client for sports card data and pricing"""
 
 import os
+import re
 import time
 import logging
 from typing import List, Dict, Optional, Any
@@ -43,48 +44,33 @@ class SportsCardProClient:
     @retry_on_failure(max_retries=3, delay=1.0)
     def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict:
         """
-        Make API request to Sports Card Pro API
+        Make API request to PriceCharting API
         
         Args:
-            endpoint: API endpoint path
-            params: Query parameters
+            endpoint: API endpoint ('product' or 'products')
+            params: Query parameters (must include 't' for auth)
         
         Returns:
             Parsed JSON response
         """
-        # Apply rate limiting using utility decorator approach
-        from src.utils import rate_limit
-        
-        # Note: Rate limiting is applied at method level
-        # For per-instance rate limiting, consider using a decorator on __init__
-        
-        # Add API token to every request
         if params is None:
             params = {}
-        params['t'] = self.api_key
+        
+        # API requires 't' parameter - ensure it's present
+        if 't' not in params:
+            params['t'] = self.api_key
         
         url = f"{self.BASE_URL}/{endpoint}"
         
         try:
-            response = self.session.get(
-                url,
-                params=params,
-                timeout=30
-            )
+            response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
-            
             data = response.json()
-            
-            # Check for API errors
-            if isinstance(data, dict) and 'error' in data:
-                error_msg = data.get('error', 'Unknown error')
-                logger.error(f"Sports Card Pro API error: {error_msg}")
-                raise Exception(f"Sports Card Pro API error: {error_msg}")
             
             return data
             
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 401:
+            if e.response.status_code == 401 or e.response.status_code == 403:
                 error_msg = "Invalid API key. Please check SPORTSCARDPRO_API_KEY in .env"
                 logger.error(error_msg)
                 raise Exception(error_msg) from e
@@ -98,80 +84,42 @@ class SportsCardProClient:
             logger.error(f"Request failed: {str(e)}")
             raise
     
-    def search_cards(
-        self,
-        query: Optional[str] = None,
-        sport: Optional[str] = None,
-        player: Optional[str] = None,
-        year: Optional[str] = None,
-        card_set: Optional[str] = None,
-        card_number: Optional[str] = None,
-        grade: Optional[str] = None,
-        grading_company: Optional[str] = None,
-        min_price: Optional[float] = None,
-        max_price: Optional[float] = None,
-        limit: int = 100,
-        offset: int = 0
-    ) -> List[Dict]:
+    def search_cards(self, query: str, limit: int = 20) -> List[Dict]:
         """
-        Search for sports cards
+        Search for sports cards using simple text query
         
         Args:
-            query: General search query
-            sport: Sport filter (Baseball, Basketball, Football, Hockey, Soccer)
-            player: Player name
-            year: Card year or year range (e.g., "2023", "1986-87")
-            card_set: Card set name (e.g., "Topps", "Fleer")
-            card_number: Card number
-            grade: Grade value (e.g., "10", "9.5")
-            grading_company: Grading company (PSA, BGS, SGC, etc.)
-            min_price: Minimum price filter
-            max_price: Maximum price filter
-            limit: Maximum number of results
-            offset: Pagination offset
+            query: Search query (e.g., "michael jordan 1986 fleer", "tom brady rookie")
+            limit: Max results (API returns max 20, we can't control this)
         
         Returns:
             List of card dictionaries
         """
-        logger.info(f"Searching cards with query: {query}, player: {player}, sport: {sport}")
+        logger.info(f"Searching cards with query: {query}")
+        
+        if not query:
+            logger.warning("Empty search query provided")
+            return []
         
         params = {
-            'limit': min(limit, 100),
-            'offset': offset
+            't': self.api_key,
+            'q': query
         }
-        
-        # Add search filters
-        if query:
-            params['q'] = query
-        if sport:
-            params['sport'] = sport
-        if player:
-            params['player'] = player
-        if year:
-            params['year'] = year
-        if card_set:
-            params['set'] = card_set
-        if card_number:
-            params['number'] = card_number
-        if grade:
-            params['grade'] = grade
-        if grading_company:
-            params['grading_company'] = grading_company
-        if min_price is not None:
-            params['min_price'] = min_price
-        if max_price is not None:
-            params['max_price'] = max_price
         
         try:
             response = self._make_request('products', params)
             
+            if response.get('status') != 'success':
+                logger.error(f"API returned error: {response.get('error-message', 'Unknown error')}")
+                return []
+            
             # Parse results
             cards = []
-            items = response.get('cards', []) if isinstance(response, dict) else response
+            products = response.get('products', [])
             
-            for item in items:
+            for product in products[:limit]:  # Limit results client-side
                 try:
-                    card = self._parse_card(item)
+                    card = self._parse_card(product)
                     cards.append(card)
                 except Exception as e:
                     logger.warning(f"Failed to parse card: {str(e)}")
@@ -186,228 +134,139 @@ class SportsCardProClient:
     
     def get_card_details(self, card_id: str) -> Optional[Dict]:
         """
-        Get detailed information for a specific card
+        Get detailed information for a specific card by ID
         
         Args:
-            card_id: Sports Card Pro card ID
+            card_id: SportsCardsPro product ID
         
         Returns:
-            Card details dictionary or None if not found
+            Card details dictionary or None
         """
         logger.info(f"Getting details for card: {card_id}")
         
+        params = {
+            't': self.api_key,
+            'id': card_id
+        }
+        
         try:
-            params = {'id': card_id}
             response = self._make_request('product', params)
             
-            if isinstance(response, dict) and 'card' in response:
-                return self._parse_card(response['card'])
-            elif isinstance(response, dict):
+            if response.get('status') == 'success':
                 return self._parse_card(response)
-            
-            return None
-            
+            else:
+                logger.error(f"API error: {response.get('error-message')}")
+                return None
+                
         except Exception as e:
             logger.error(f"Failed to get card details: {str(e)}")
             return None
     
-    def get_sales_history(
-        self,
-        card_id: str,
-        days_back: int = 90,
-        limit: int = 100
-    ) -> List[Dict]:
-        """
-        Get recent sales history for a card
-        
-        Args:
-            card_id: Sports Card Pro card ID
-            days_back: Number of days to look back
-            limit: Maximum number of sales records
-        
-        Returns:
-            List of sales dictionaries
-        """
-        logger.info(f"Getting sales history for card: {card_id} (last {days_back} days)")
-        
-        try:
-            # Sales history is included in the product endpoint
-            # Note: days_back and limit parameters are kept for backwards compatibility
-            # but are not currently used by the PriceCharting API
-            params = {'id': card_id}
-            response = self._make_request('product', params)
-            
-            sales = []
-            items = response.get('sales', []) if isinstance(response, dict) else response
-            
-            for item in items:
-                try:
-                    sale = self._parse_sale(item)
-                    sales.append(sale)
-                except Exception as e:
-                    logger.warning(f"Failed to parse sale: {str(e)}")
-                    continue
-            
-            logger.info(f"Found {len(sales)} sales")
-            return sales
-            
-        except Exception as e:
-            logger.error(f"Failed to get sales history: {str(e)}")
-            return []
+    def get_sales_history(self, card_id: str, days_back: int = 90, limit: int = 100) -> List[Dict]:
+        """Sales history not supported by PriceCharting API"""
+        logger.warning("Sales history not supported by PriceCharting API")
+        return []
     
     def get_market_value(self, card_id: str) -> Optional[Dict]:
         """
-        Get current market value for a card
-        
-        Args:
-            card_id: Sports Card Pro card ID
-        
-        Returns:
-            Market value dictionary with pricing statistics
+        Get market value from product prices
+        Uses the product API and extracts price data
         """
-        logger.info(f"Getting market value for card: {card_id}")
+        product = self.get_card_details(card_id)
+        if not product:
+            return None
         
-        try:
-            # Market value is included in the product endpoint
-            params = {'id': card_id}
-            response = self._make_request('product', params)
-            
-            if isinstance(response, dict):
-                return {
-                    'market_value': response.get('market_value', 0),
-                    'average': response.get('average_price', 0),
-                    'median': response.get('median_price', 0),
-                    'min': response.get('min_price', 0),
-                    'max': response.get('max_price', 0),
-                    'std_dev': response.get('std_dev', 0),
-                    'sample_size': response.get('sales_count', 0),
-                    'last_updated': response.get('last_updated'),
-                }
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get market value: {str(e)}")
-            return None
+        return {
+            'market_value': product.get('market_value', 0),
+            'ungraded': product.get('price', 0),
+            'psa_10': product.get('psa_10_price', 0),
+            'graded_9': product.get('graded_9_price', 0),
+        }
     
     def _parse_card(self, item: Dict) -> Dict:
         """
-        Parse Sports Card Pro card response into structured dictionary
+        Parse PriceCharting API product response
         
         Args:
-            item: Raw card data from API
+            item: Raw product data from API
         
         Returns:
             Parsed card dictionary
         """
-        # Helper function to safely convert to float
-        def safe_float(value, default=0.0):
-            if value is None:
-                return default
+        def pennies_to_dollars(pennies):
+            """Convert price in pennies to dollars"""
+            if pennies is None:
+                return 0.0
             try:
-                return float(value)
+                return float(pennies) / 100.0
             except (ValueError, TypeError):
-                return default
+                return 0.0
+        
+        # Extract set and card name from console-name and product-name
+        set_name = item.get('console-name', '')
+        card_name = item.get('product-name', '')
+        
+        # Parse prices (all in pennies, convert to dollars)
+        # According to PriceCharting API docs:
+        # - loose-price: Ungraded card value
+        # - graded-price: Graded 9 value
+        # - manual-only-price: PSA 10 value
+        # - new-price: Graded 8/8.5 value
+        # - cib-price: Graded 7/7.5 value
+        # - bgs-10-price: BGS 10 value
+        loose_price = pennies_to_dollars(item.get('loose-price'))
+        graded_9_price = pennies_to_dollars(item.get('graded-price'))
+        psa_10_price = pennies_to_dollars(item.get('manual-only-price'))
+        graded_8_price = pennies_to_dollars(item.get('new-price'))
+        graded_7_price = pennies_to_dollars(item.get('cib-price'))
+        bgs_10_price = pennies_to_dollars(item.get('bgs-10-price'))
+        
+        # Use highest available price as market value
+        # Rationale: For investment analysis, the highest graded value represents
+        # the maximum market potential of the card. Users can access individual
+        # grade prices if they need more specific valuations.
+        market_value = max(psa_10_price, bgs_10_price, graded_9_price, graded_8_price, loose_price)
         
         return {
-            'card_id': item.get('id', item.get('card_id', '')),
-            'title': self._build_title(item),
-            'player': item.get('player_name', item.get('player', '')),
-            'sport': item.get('sport', ''),
-            'year': item.get('year', ''),
-            'set': item.get('set_name', item.get('set', '')),
-            'card_number': item.get('card_number', item.get('number', '')),
-            'grade': item.get('grade', ''),
-            'grading_company': item.get('grading_company', ''),
-            'price': safe_float(item.get('current_price', item.get('price'))),
-            'market_value': safe_float(item.get('market_value')),
-            'image_url': item.get('image_url', item.get('image', '')),
-            'description': item.get('description', ''),
-            'parallel': item.get('parallel', ''),
-            'rookie': item.get('rookie', False),
-            'autograph': item.get('autograph', False),
-            'memorabilia': item.get('memorabilia', False),
-            'population': item.get('population', 0),
+            'card_id': item.get('id', ''),
+            'title': f"{card_name} - {set_name}",
+            'player': card_name,  # Product name contains player info
+            'set': set_name,
+            'sport': self._extract_sport(set_name),
+            'year': self._extract_year(set_name),
+            'card_number': '',  # Not separately provided
+            'grade': '',
+            'grading_company': '',
+            'price': loose_price,  # Ungraded price
+            'market_value': market_value,
+            'psa_10_price': psa_10_price,
+            'graded_9_price': graded_9_price,
+            'graded_8_price': graded_8_price,
+            'graded_7_price': graded_7_price,
+            'bgs_10_price': bgs_10_price,
+            'image_url': '',  # Not provided by API
+            'description': f"{card_name} from {set_name}",
+            'genre': item.get('genre', ''),
+            'release_date': item.get('release-date', ''),
         }
     
-    def _parse_sale(self, item: Dict) -> Dict:
-        """
-        Parse Sports Card Pro sale response into structured dictionary
-        
-        Args:
-            item: Raw sale data from API
-        
-        Returns:
-            Parsed sale dictionary
-        """
-        # Parse sale date - handles multiple common ISO formats
-        sale_date = None
-        if 'sale_date' in item:
-            try:
-                date_str = item['sale_date']
-                # Remove timezone indicator and parse
-                if isinstance(date_str, str):
-                    # Handle 'Z' (Zulu/UTC) timezone
-                    date_str = date_str.replace('Z', '+00:00')
-                    sale_date = datetime.fromisoformat(date_str)
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse sale date '{item.get('sale_date')}': {str(e)}")
-        
-        return {
-            'sale_id': item.get('id', item.get('sale_id', '')),
-            'price': float(item.get('price', 0)),
-            'sale_date': sale_date,
-            'marketplace': item.get('marketplace', item.get('platform', '')),
-            'condition': item.get('condition', ''),
-            'url': item.get('url', ''),
-        }
+    def _extract_sport(self, set_name: str) -> str:
+        """Extract sport from set name"""
+        set_lower = set_name.lower()
+        if 'basketball' in set_lower:
+            return 'Basketball'
+        elif 'baseball' in set_lower:
+            return 'Baseball'
+        elif 'football' in set_lower:
+            return 'Football'
+        elif 'hockey' in set_lower:
+            return 'Hockey'
+        elif 'soccer' in set_lower:
+            return 'Soccer'
+        return ''
     
-    def _build_title(self, card: Dict) -> str:
-        """
-        Build a descriptive title from card data
-        
-        Args:
-            card: Card dictionary
-        
-        Returns:
-            Formatted title string
-        """
-        parts = []
-        
-        # Year
-        if card.get('year'):
-            parts.append(str(card['year']))
-        
-        # Set
-        if card.get('set_name') or card.get('set'):
-            parts.append(card.get('set_name', card.get('set', '')))
-        
-        # Player
-        if card.get('player_name') or card.get('player'):
-            parts.append(card.get('player_name', card.get('player', '')))
-        
-        # Card number
-        if card.get('card_number') or card.get('number'):
-            parts.append(f"#{card.get('card_number', card.get('number', ''))}")
-        
-        # Parallel/Variant
-        if card.get('parallel'):
-            parts.append(card['parallel'])
-        
-        # Grade
-        if card.get('grading_company') and card.get('grade'):
-            parts.append(f"{card['grading_company']} {card['grade']}")
-        
-        # Special features
-        features = []
-        if card.get('rookie'):
-            features.append('RC')
-        if card.get('autograph'):
-            features.append('Auto')
-        if card.get('memorabilia'):
-            features.append('Mem')
-        
-        if features:
-            parts.append(f"({'/'.join(features)})")
-        
-        return ' '.join(parts) if parts else 'Unknown Card'
+    def _extract_year(self, set_name: str) -> str:
+        """Extract year from set name (e.g., '1986 Fleer' -> '1986')"""
+        match = re.search(r'\b(19|20)\d{2}\b', set_name)
+        return match.group(0) if match else ''
+
