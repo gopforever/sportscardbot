@@ -1,6 +1,7 @@
 """Sports Card Pro API Client for sports card data and pricing"""
 
 import os
+import re
 import time
 import logging
 from typing import List, Dict, Optional, Any
@@ -206,6 +207,13 @@ class SportsCardProClient:
         card_name = item.get('product-name', '')
         
         # Parse prices (all in pennies, convert to dollars)
+        # According to PriceCharting API docs:
+        # - loose-price: Ungraded card value
+        # - graded-price: Graded 9 value
+        # - manual-only-price: PSA 10 value
+        # - new-price: Graded 8/8.5 value
+        # - cib-price: Graded 7/7.5 value
+        # - bgs-10-price: BGS 10 value
         loose_price = pennies_to_dollars(item.get('loose-price'))
         graded_9_price = pennies_to_dollars(item.get('graded-price'))
         psa_10_price = pennies_to_dollars(item.get('manual-only-price'))
@@ -214,6 +222,9 @@ class SportsCardProClient:
         bgs_10_price = pennies_to_dollars(item.get('bgs-10-price'))
         
         # Use highest available price as market value
+        # Rationale: For investment analysis, the highest graded value represents
+        # the maximum market potential of the card. Users can access individual
+        # grade prices if they need more specific valuations.
         market_value = max(psa_10_price, bgs_10_price, graded_9_price, graded_8_price, loose_price)
         
         return {
@@ -256,7 +267,6 @@ class SportsCardProClient:
     
     def _extract_year(self, set_name: str) -> str:
         """Extract year from set name (e.g., '1986 Fleer' -> '1986')"""
-        import re
         match = re.search(r'\b(19|20)\d{2}\b', set_name)
         return match.group(0) if match else ''
 
