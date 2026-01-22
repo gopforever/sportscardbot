@@ -1,24 +1,44 @@
 # Sports Card Bot Configuration
 
 search:
-  # Search keywords - customize to your preferences
+  # Search keywords - customize to your preferences (used for eBay)
   keywords:
     - "Michael Jordan PSA 10"
     - "LeBron James rookie"
     - "Tom Brady rookie PSA"
   
-  # eBay category IDs for sports cards
+  # Sports Card Pro filters
+  sports:
+    - "Baseball"
+    - "Basketball"
+    - "Football"
+  
+  players:
+    - "Michael Jordan"
+    - "LeBron James"
+    - "Tom Brady"
+  
+  years:
+    - 2023
+    - "1986-87"
+  
+  sets:
+    - "Topps"
+    - "Fleer"
+    - "Prizm"
+  
+  # eBay category IDs for sports cards (eBay only)
   categories:
     - "212"  # Sports Trading Cards
   
-  # Search type: all, auction, or fixed
+  # Search type: all, auction, or fixed (eBay only)
   listing_type: "all"
 
 analysis:
   # Minimum discount percentage to flag as deal (e.g., 20 = 20% below market)
   discount_threshold: 20
   
-  # Number of days to look back for sold listings
+  # Number of days to look back for sold listings (eBay only)
   sold_days: 30
   
   # Minimum number of sold items needed for reliable market value
@@ -30,11 +50,21 @@ analysis:
 filters:
   # Price range to search within
   min_price: 10
-  max_price: 1000
+  max_price: 10000
   
-  # Card condition (leave empty for all)
+  # Card condition (leave empty for all) - eBay only
   # Options: "New", "Used", "Not Specified"
   condition: ""
+  
+  # Grading filters (Sports Card Pro)
+  grades:
+    - "PSA 10"
+    - "BGS 9.5"
+  
+  grading_companies:
+    - "PSA"
+    - "BGS"
+    - "SGC"
   
   # Only show graded cards
   graded_only: false
@@ -47,4 +77,4 @@ api:
   cache_duration: 30
   
   # Rate limiting - requests per minute
-  rate_limit: 50
+  rate_limit: 60

@@ -15,6 +15,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.ebay_client import eBayClient
+from src.sportscardpro_client import SportsCardProClient
 from src.price_analyzer import PriceAnalyzer
 from src.utils import format_currency, logger
 
@@ -53,57 +54,158 @@ if 'search_history' not in st.session_state:
 
 # Initialize clients
 @st.cache_resource
-def init_clients(discount_threshold, min_samples, recency_weight, environment):
-    """Initialize eBay client and price analyzer"""
-    app_id = os.getenv('EBAY_APP_ID')
+def init_clients(discount_threshold, min_samples, recency_weight, api_source):
+    """Initialize API client and price analyzer"""
     
-    if not app_id or app_id == 'your_app_id_here':
-        st.error("⚠️ eBay API credentials not configured!")
-        st.info("""
-        **Setup Instructions:**
-        1. Get API keys from https://developer.ebay.com/my/keys
-        2. Copy `.env.example` to `.env`
-        3. Add your `EBAY_APP_ID` to `.env`
-        4. Restart the app
-        """)
-        st.stop()
+    # Determine which API to use
+    use_sportscardpro = api_source == 'sportscardpro'
     
-    try:
-        ebay_client = eBayClient(app_id, environment=environment)
-        price_analyzer = PriceAnalyzer(
-            discount_threshold=discount_threshold,
-            min_sold_samples=min_samples,
-            recency_weight=recency_weight
-        )
-        return ebay_client, price_analyzer
-    except Exception as e:
-        st.error(f"Failed to initialize clients: {str(e)}")
-        st.stop()
+    if use_sportscardpro:
+        # Use Sports Card Pro API
+        api_key = os.getenv('SPORTSCARDPRO_API_KEY')
+        
+        if not api_key or api_key == 'your_api_key_here':
+            st.error("⚠️ Sports Card Pro API credentials not configured!")
+            st.info("""
+            **Setup Instructions:**
+            1. Visit https://www.sportscardspro.com/api-documentation
+            2. Sign up for API access
+            3. Get your API key
+            4. Copy `.env.example` to `.env`
+            5. Add your `SPORTSCARDPRO_API_KEY` to `.env`
+            6. Restart the app
+            """)
+            st.stop()
+        
+        try:
+            client = SportsCardProClient(api_key)
+            price_analyzer = PriceAnalyzer(
+                discount_threshold=discount_threshold,
+                min_sold_samples=min_samples,
+                recency_weight=recency_weight
+            )
+            return client, price_analyzer
+        except Exception as e:
+            st.error(f"Failed to initialize Sports Card Pro client: {str(e)}")
+            st.stop()
+    else:
+        # Use eBay API (legacy)
+        app_id = os.getenv('EBAY_APP_ID')
+        environment = os.getenv('EBAY_ENVIRONMENT', 'sandbox').lower()
+        
+        if not app_id or app_id == 'your_app_id_here':
+            st.error("⚠️ eBay API credentials not configured!")
+            st.info("""
+            **Setup Instructions:**
+            1. Get API keys from https://developer.ebay.com/my/keys
+            2. Copy `.env.example` to `.env`
+            3. Add your `EBAY_APP_ID` to `.env`
+            4. Restart the app
+            """)
+            st.stop()
+        
+        try:
+            client = eBayClient(app_id, environment=environment)
+            price_analyzer = PriceAnalyzer(
+                discount_threshold=discount_threshold,
+                min_sold_samples=min_samples,
+                recency_weight=recency_weight
+            )
+            return client, price_analyzer
+        except Exception as e:
+            st.error(f"Failed to initialize eBay client: {str(e)}")
+            st.stop()
 
 # Sidebar configuration
 st.sidebar.title("🏀 Sports Card Bot")
-st.sidebar.markdown("Find underpriced sports cards on eBay")
+st.sidebar.markdown("Find underpriced sports cards")
 
-# Display environment indicator
-environment = os.getenv('EBAY_ENVIRONMENT', 'sandbox').lower()
-st.sidebar.info(f"🌐 Environment: **{environment.upper()}**")
+# API Source Selection
+st.sidebar.subheader("API Source")
+api_source = st.sidebar.radio(
+    "Data Source",
+    options=['sportscardpro', 'ebay'],
+    format_func=lambda x: {
+        'sportscardpro': '🎯 Sports Card Pro (Recommended)',
+        'ebay': '📦 eBay (Legacy)'
+    }[x],
+    help="Sports Card Pro provides better sports card-specific data and pricing"
+)
 
-if environment == 'sandbox':
-    st.sidebar.warning("⚠️ Using sandbox (test) data. Switch to production for real listings.")
+# Display environment indicator for eBay
+if api_source == 'ebay':
+    environment = os.getenv('EBAY_ENVIRONMENT', 'sandbox').lower()
+    st.sidebar.info(f"🌐 Environment: **{environment.upper()}**")
+    
+    if environment == 'sandbox':
+        st.sidebar.warning("⚠️ Using sandbox (test) data. Switch to production for real listings.")
+    else:
+        st.sidebar.success("✅ Using production (real) data.")
 else:
-    st.sidebar.success("✅ Using production (real) data.")
+    st.sidebar.success("✅ Using Sports Card Pro API")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Search Configuration")
 
-# Search keywords
-keywords_input = st.sidebar.text_area(
-    "Search Keywords (one per line)",
-    value="\n".join(config.get('search', {}).get('keywords', [])),
-    height=100,
-    help="Enter one search term per line"
-)
-keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
+# Search keywords or filters based on API source
+if api_source == 'sportscardpro':
+    # Sports Card Pro specific filters
+    sport = st.sidebar.selectbox(
+        "Sport",
+        options=['', 'Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer'],
+        help="Filter by sport"
+    )
+    
+    player = st.sidebar.text_input(
+        "Player Name",
+        value=config.get('search', {}).get('players', [''])[0] if config.get('search', {}).get('players') else '',
+        help="Search by player name"
+    )
+    
+    year = st.sidebar.text_input(
+        "Year",
+        value=str(config.get('search', {}).get('years', [''])[0]) if config.get('search', {}).get('years') else '',
+        help="Card year (e.g., 2023, 1986-87)"
+    )
+    
+    card_set = st.sidebar.text_input(
+        "Set",
+        value=config.get('search', {}).get('sets', [''])[0] if config.get('search', {}).get('sets') else '',
+        help="Card set name (e.g., Topps, Fleer)"
+    )
+    
+    # General query field
+    query = st.sidebar.text_input(
+        "Search Query (optional)",
+        value='',
+        help="General search query"
+    )
+    
+    # Build keywords list for compatibility
+    keywords = []
+    if query:
+        keywords.append(query)
+    elif player:
+        keywords.append(player)
+    elif sport:
+        keywords.append(sport)
+    else:
+        keywords = ['']  # Empty search will return general results
+else:
+    # eBay keywords (legacy)
+    keywords_input = st.sidebar.text_area(
+        "Search Keywords (one per line)",
+        value="\n".join(config.get('search', {}).get('keywords', [])),
+        height=100,
+        help="Enter one search term per line"
+    )
+    keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
+    
+    # Set empty values for Sports Card Pro filters
+    sport = None
+    player = None
+    year = None
+    card_set = None
 
 # Analysis settings
 st.sidebar.subheader("Analysis Settings")
@@ -147,20 +249,40 @@ max_price = col2.number_input(
     step=50
 )
 
-# Condition filter
-condition = st.sidebar.selectbox(
-    "Condition",
-    options=["All", "New", "Used", "Not Specified"],
-    index=0
-)
-condition_filter = None if condition == "All" else condition
-
-# Listing type
-listing_type = st.sidebar.selectbox(
-    "Listing Type",
-    options=["all", "auction", "fixed"],
-    index=0
-)
+# Condition/Grade filters
+if api_source == 'sportscardpro':
+    # Grading filters for Sports Card Pro
+    grading_company = st.sidebar.selectbox(
+        "Grading Company",
+        options=['', 'PSA', 'BGS', 'SGC', 'CGC', 'HGA'],
+        help="Filter by grading company"
+    )
+    
+    grade = st.sidebar.selectbox(
+        "Grade",
+        options=['', '10', '9.5', '9', '8.5', '8', '7.5', '7', '6', '5', '4', '3', '2', '1'],
+        help="Filter by grade"
+    )
+    
+    condition_filter = None
+    listing_type = "all"
+else:
+    # eBay filters (legacy)
+    condition = st.sidebar.selectbox(
+        "Condition",
+        options=["All", "New", "Used", "Not Specified"],
+        index=0
+    )
+    condition_filter = None if condition == "All" else condition
+    
+    listing_type = st.sidebar.selectbox(
+        "Listing Type",
+        options=["all", "auction", "fixed"],
+        index=0
+    )
+    
+    grading_company = None
+    grade = None
 
 # Search button
 st.sidebar.markdown("---")
@@ -171,7 +293,7 @@ st.title("🏀 Sports Card Deal Finder")
 st.markdown("Discover underpriced sports cards by comparing active listings to recent sold prices")
 
 # Initialize clients with current settings
-ebay_client, price_analyzer = init_clients(discount_threshold, min_samples, 0.7, environment)
+client, price_analyzer = init_clients(discount_threshold, min_samples, 0.7, api_source)
 
 # Update config with current settings
 config['analysis']['discount_threshold'] = discount_threshold
@@ -182,15 +304,28 @@ config['filters']['max_price'] = max_price
 config['filters']['condition'] = condition_filter
 config['search']['listing_type'] = listing_type
 
+# Add Sports Card Pro specific config
+if api_source == 'sportscardpro':
+    config['search']['sport'] = sport if sport else None
+    config['search']['player'] = player if player else None
+    config['search']['year'] = year if year else None
+    config['search']['set'] = card_set if card_set else None
+    config['filters']['grading_company'] = grading_company if grading_company else None
+    config['filters']['grade'] = grade if grade else None
+
 # Search logic
 if search_button:
     if not keywords:
-        st.warning("Please enter at least one search keyword")
+        if api_source == 'sportscardpro':
+            st.warning("Please enter at least one search parameter (player, sport, query, etc.)")
+        else:
+            st.warning("Please enter at least one search keyword")
     else:
-        with st.spinner("Searching eBay and analyzing prices..."):
+        search_source = "Sports Card Pro" if api_source == 'sportscardpro' else "eBay"
+        with st.spinner(f"Searching {search_source} and analyzing prices..."):
             try:
                 # Run analysis
-                results = price_analyzer.analyze_by_keyword(keywords, ebay_client, config)
+                results = price_analyzer.analyze_by_keyword(keywords, client, config)
                 
                 # Store results
                 st.session_state.opportunities = results
@@ -313,8 +448,24 @@ if st.session_state.opportunities:
             with card_col2:
                 st.markdown(f"**Full Title:** {row['title']}")
                 st.markdown(f"**Condition:** {row['condition']}")
-                st.markdown(f"**Seller:** {row['seller']}")
-                st.markdown(f"**Listing Type:** {row['listing_type']}")
+                
+                # Display Sports Card Pro specific fields if available
+                if 'player' in row and row['player']:
+                    st.markdown(f"**Player:** {row['player']}")
+                if 'sport' in row and row['sport']:
+                    st.markdown(f"**Sport:** {row['sport']}")
+                if 'year' in row and row['year']:
+                    st.markdown(f"**Year:** {row['year']}")
+                if 'set' in row and row['set']:
+                    st.markdown(f"**Set:** {row['set']}")
+                if 'card_number' in row and row['card_number']:
+                    st.markdown(f"**Card #:** {row['card_number']}")
+                
+                # Display eBay specific fields if available
+                if 'seller' in row:
+                    st.markdown(f"**Seller:** {row['seller']}")
+                if 'listing_type' in row:
+                    st.markdown(f"**Listing Type:** {row['listing_type']}")
                 
                 metric_col1, metric_col2, metric_col3 = st.columns(3)
                 metric_col1.metric("Active Price", format_currency(row['active_price']))
@@ -326,7 +477,10 @@ if st.session_state.opportunities:
                 metric_col5.metric("Profit Margin", f"{row['profit_margin']:.1f}%")
                 metric_col6.metric("Sold Comps", int(row['sold_comps']))
                 
-                st.markdown(f"[🔗 View on eBay]({row['url']})")
+                # Link based on source
+                if row['url']:
+                    link_text = "🔗 View Card" if api_source == 'sportscardpro' else "🔗 View on eBay"
+                    st.markdown(f"[{link_text}]({row['url']})")
     
     # Export button
     st.markdown("---")
@@ -344,12 +498,21 @@ else:
     st.info("👆 Configure your search in the sidebar and click 'Search for Deals' to get started!")
     
     st.markdown("### 🚀 How It Works")
-    st.markdown("""
-    1. **Configure** your search keywords and filters in the sidebar
-    2. **Click** the 'Search for Deals' button
-    3. **Review** the opportunities sorted by discount percentage
-    4. **Export** results to CSV for further analysis
-    """)
+    if api_source == 'sportscardpro':
+        st.markdown("""
+        1. **Select** Sports Card Pro as your data source (recommended)
+        2. **Configure** your search by sport, player, year, set, or grade in the sidebar
+        3. **Click** the 'Search for Deals' button
+        4. **Review** the opportunities with market values from Sports Card Pro
+        5. **Export** results to CSV for further analysis
+        """)
+    else:
+        st.markdown("""
+        1. **Configure** your search keywords and filters in the sidebar
+        2. **Click** the 'Search for Deals' button
+        3. **Review** the opportunities sorted by discount percentage
+        4. **Export** results to CSV for further analysis
+        """)
     
     st.markdown("### 🎯 Features")
     cols = st.columns(3)
@@ -375,13 +538,22 @@ else:
 # Footer
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📝 About")
-st.sidebar.info("""
-**Sports Card Bot v1.0**
-
-Finds underpriced sports cards on eBay by comparing active listings to market value.
-
-[📚 Documentation](README.md)
-""")
+if api_source == 'sportscardpro':
+    st.sidebar.info("""
+    **Sports Card Bot v2.0**
+    
+    Finds underpriced sports cards using Sports Card Pro API for accurate market values and pricing data.
+    
+    [📚 Documentation](README.md)
+    """)
+else:
+    st.sidebar.info("""
+    **Sports Card Bot v1.0 (Legacy)**
+    
+    Finds underpriced sports cards on eBay by comparing active listings to market value.
+    
+    [📚 Documentation](README.md)
+    """)
 
 if st.session_state.last_search:
     st.sidebar.markdown(f"Last search: {st.session_state.last_search.strftime('%I:%M %p')}")
