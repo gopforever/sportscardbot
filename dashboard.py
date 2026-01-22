@@ -150,6 +150,8 @@ st.sidebar.subheader("Search Configuration")
 # Search keywords or filters based on API source
 if api_source == 'sportscardpro':
     # Sports Card Pro specific filters
+    search_config = config.get('search', {})
+    
     sport = st.sidebar.selectbox(
         "Sport",
         options=['', 'Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer'],
@@ -158,19 +160,19 @@ if api_source == 'sportscardpro':
     
     player = st.sidebar.text_input(
         "Player Name",
-        value=config.get('search', {}).get('players', [''])[0] if config.get('search', {}).get('players') else '',
+        value=search_config.get('players', [''])[0] if search_config.get('players') else '',
         help="Search by player name"
     )
     
     year = st.sidebar.text_input(
         "Year",
-        value=str(config.get('search', {}).get('years', [''])[0]) if config.get('search', {}).get('years') else '',
+        value=str(search_config.get('years', [''])[0]) if search_config.get('years') else '',
         help="Card year (e.g., 2023, 1986-87)"
     )
     
     card_set = st.sidebar.text_input(
         "Set",
-        value=config.get('search', {}).get('sets', [''])[0] if config.get('search', {}).get('sets') else '',
+        value=search_config.get('sets', [''])[0] if search_config.get('sets') else '',
         help="Card set name (e.g., Topps, Fleer)"
     )
     

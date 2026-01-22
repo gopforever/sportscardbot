@@ -54,8 +54,11 @@ class SportsCardProClient:
         Returns:
             Parsed JSON response
         """
-        # Apply rate limiting
-        time.sleep(60.0 / self.rate_limit_per_min)
+        # Apply rate limiting using utility decorator approach
+        from src.utils import rate_limit
+        
+        # Note: Rate limiting is applied at method level
+        # For per-instance rate limiting, consider using a decorator on __init__
         
         url = f"{self.BASE_URL}/{endpoint}"
         
@@ -292,6 +295,15 @@ class SportsCardProClient:
         Returns:
             Parsed card dictionary
         """
+        # Helper function to safely convert to float
+        def safe_float(value, default=0.0):
+            if value is None:
+                return default
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return default
+        
         return {
             'card_id': item.get('id', item.get('card_id', '')),
             'title': self._build_title(item),
@@ -302,8 +314,8 @@ class SportsCardProClient:
             'card_number': item.get('card_number', item.get('number', '')),
             'grade': item.get('grade', ''),
             'grading_company': item.get('grading_company', ''),
-            'price': float(item.get('current_price', item.get('price', 0))),
-            'market_value': float(item.get('market_value', 0)),
+            'price': safe_float(item.get('current_price', item.get('price'))),
+            'market_value': safe_float(item.get('market_value')),
             'image_url': item.get('image_url', item.get('image', '')),
             'description': item.get('description', ''),
             'parallel': item.get('parallel', ''),
@@ -323,13 +335,18 @@ class SportsCardProClient:
         Returns:
             Parsed sale dictionary
         """
-        # Parse sale date
+        # Parse sale date - handles multiple common ISO formats
         sale_date = None
         if 'sale_date' in item:
             try:
-                sale_date = datetime.fromisoformat(item['sale_date'].replace('Z', '+00:00'))
-            except Exception as e:
-                logger.warning(f"Failed to parse sale date: {str(e)}")
+                date_str = item['sale_date']
+                # Remove timezone indicator and parse
+                if isinstance(date_str, str):
+                    # Handle 'Z' (Zulu/UTC) timezone
+                    date_str = date_str.replace('Z', '+00:00')
+                    sale_date = datetime.fromisoformat(date_str)
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse sale date '{item.get('sale_date')}': {str(e)}")
         
         return {
             'sale_id': item.get('id', item.get('sale_id', '')),

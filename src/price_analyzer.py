@@ -199,6 +199,20 @@ class PriceAnalyzer:
         
         return df
     
+    def _is_sportscardpro_client(self, client) -> bool:
+        """
+        Check if the client is a Sports Card Pro client
+        
+        Args:
+            client: API client instance
+        
+        Returns:
+            True if Sports Card Pro client, False otherwise
+        """
+        # Import here to avoid circular dependency
+        from src.sportscardpro_client import SportsCardProClient
+        return isinstance(client, SportsCardProClient)
+    
     def analyze_by_keyword(
         self,
         keywords: List[str],
@@ -219,8 +233,7 @@ class PriceAnalyzer:
         results = {}
         
         # Check if we're using Sports Card Pro client
-        from src.sportscardpro_client import SportsCardProClient
-        is_sportscardpro = isinstance(client, SportsCardProClient)
+        is_sportscardpro = self._is_sportscardpro_client(client)
         
         for keyword in keywords:
             logger.info(f"Analyzing keyword: {keyword}")
