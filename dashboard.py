@@ -420,6 +420,7 @@ if st.session_state.opportunities:
                         'set': market_data.get('set', ''),
                         'card_number': market_data.get('card_number', ''),
                         'shipping_cost': listing.get('shipping_cost', 0),
+                        'match_score': opp.get('match_score', 0),
                         'source': 'eBay Scraper'
                     })
                 
@@ -562,6 +563,10 @@ if st.session_state.opportunities:
                 # Show shipping cost if available (for scraped listings)
                 if 'shipping_cost' in row and row['shipping_cost'] > 0:
                     st.caption(f"💰 Shipping: {format_currency(row['shipping_cost'])}")
+                
+                # Show match score if available (for scraped listings)
+                if 'match_score' in row and row['match_score'] > 0:
+                    st.caption(f"🎯 Match confidence: {row['match_score']*100:.0f}%")
                 
                 # Link based on source
                 if row['url']:

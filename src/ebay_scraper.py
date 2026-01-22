@@ -81,9 +81,17 @@ class eBayScraper:
         # Be respectful - rate limit
         self._rate_limit()
         
-        # Build search URL
+        # Build search URL with sports cards category
         encoded_query = quote_plus(query)
-        url = f"{self.BASE_URL}/sch/i.html?_nkw={encoded_query}&_sacat=212"  # 212 = Sports Cards category
+        url = f"{self.BASE_URL}/sch/i.html?_nkw={encoded_query}"
+        
+        # Add category filters for sports cards
+        url += "&_sacat=212"  # Sports Mem, Cards & Fan Shop
+        url += "&LH_TitleDesc=1"  # Search title and description
+        
+        # Filter to sports trading cards specifically
+        url += "&_in_kw=1"  # Search in keywords
+        url += "&_ex_kw=funko+pop+magic+pokemon+yugioh+comic+game+jersey"  # Exclude non-cards
         
         # Add filters
         if buy_it_now_only:

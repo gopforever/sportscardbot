@@ -422,44 +422,74 @@ class PriceAnalyzer:
         opportunities = []
         
         # 1. Get market values from Sports Card Pro
-        scp_cards = sportscardpro_client.search_cards(query=query, limit=20)
+        scp_cards = sportscardpro_client.search_cards(query=query, limit=10)  # Reduce to 10 to avoid too many eBay requests
         
         if not scp_cards:
             logger.warning(f"No Sports Card Pro data found for: {query}")
             return {'opportunities': []}
         
-        # 2. For each card, scrape eBay for current listings
-        for scp_card in scp_cards:
-            # Build eBay search query from Sports Card Pro card
-            ebay_query = f"{scp_card.get('player', '')} {scp_card.get('set', '')}"
+        # 2. Instead of searching eBay for each individual card,
+        #    use the original query for eBay (which is already specific)
+        logger.info(f"Scraping eBay with original query: {query}")
+        
+        ebay_listings = ebay_scraper.search_listings(
+            query=query,
+            limit=30
+        )
+        
+        if not ebay_listings:
+            logger.warning(f"No eBay listings found for: {query}")
+            return {'opportunities': []}
+        
+        # 3. Compare eBay listings against Sports Card Pro market values
+        #    Match by fuzzy string comparison of titles
+        for listing in ebay_listings:
+            listing_title = listing.get('title', '').lower()
             
-            # Scrape eBay - only check listings reasonably priced
-            ebay_listings = ebay_scraper.search_listings(
-                query=ebay_query,
-                max_price=scp_card.get('market_value', 0) * self.MAX_SCRAPE_PRICE_MULTIPLIER,
-                limit=20
-            )
+            # Filter out non-sports cards
+            if self._is_non_sports_card(listing_title):
+                logger.debug(f"Skipping non-sports card: {listing_title}")
+                continue
             
-            # 3. Compare each eBay listing to Sports Card Pro market value
-            for listing in ebay_listings:
-                market_value = scp_card.get('market_value', 0)
+            # Try to match listing to Sports Card Pro cards
+            best_match = None
+            best_match_score = 0
+            
+            for scp_card in scp_cards:
+                match_score = self._calculate_match_score(listing, scp_card)
+                
+                if match_score > best_match_score:
+                    best_match_score = match_score
+                    best_match = scp_card
+            
+            # If we found a reasonable match, compare prices
+            if best_match and best_match_score > 0.3:  # 30% match threshold
+                market_value = best_match.get('market_value', 0)
                 
                 if market_value == 0:
                     continue
                 
                 listing_price = listing.get('total_cost', 0)
                 
+                if listing_price == 0:
+                    continue
+                
                 # Calculate discount
                 discount_pct = ((market_value - listing_price) / market_value) * 100
                 
                 if discount_pct >= self.discount_threshold:
+                    logger.info(f"eBay listing: {listing_title[:80]}")
+                    logger.info(f"Best match: {best_match.get('title', '')} (score: {best_match_score:.2f})")
+                    logger.info(f"Market value: ${market_value:.2f}, Listing price: ${listing_price:.2f}")
+                    
                     opportunities.append({
                         'listing': listing,
-                        'market_data': scp_card,
+                        'market_data': best_match,
                         'market_value': market_value,
                         'listing_price': listing_price,
                         'discount_pct': discount_pct,
                         'potential_profit': market_value - listing_price,
+                        'match_score': best_match_score,
                         'query': query
                     })
         
@@ -498,3 +528,86 @@ class PriceAnalyzer:
             'max_discount': float(opportunities_df['discount_pct'].max()),
             'max_profit': float(opportunities_df['potential_profit'].max())
         }
+    
+    def _is_non_sports_card(self, title: str) -> bool:
+        """
+        Check if listing is NOT a sports card
+        
+        Args:
+            title: Listing title (lowercase)
+        
+        Returns:
+            True if NOT a sports card
+        """
+        non_card_keywords = [
+            'funko', 'pop', 'vinyl', 'figure',
+            'magic the gathering', 'mtg', 'magic card',
+            'pokemon', 'yugioh', 'yu-gi-oh',
+            'video game', 'xbox', 'playstation', 'nintendo', 'switch',
+            'comic book', 'graphic novel', 'paperback',
+            'jersey', 'autograph photo', 'signed photo',
+            'bobblehead', 'plush', 'toy',
+        ]
+        
+        for keyword in non_card_keywords:
+            if keyword in title:
+                return True
+        
+        return False
+    
+    def _calculate_match_score(self, listing: Dict, scp_card: Dict) -> float:
+        """
+        Calculate how well an eBay listing matches a Sports Card Pro card
+        
+        Args:
+            listing: eBay listing dict
+            scp_card: Sports Card Pro card dict
+        
+        Returns:
+            Match score from 0.0 to 1.0
+        """
+        listing_title = listing.get('title', '').lower()
+        
+        # Extract key components from Sports Card Pro card
+        player = scp_card.get('player', '').lower()
+        card_set = scp_card.get('set', '').lower()
+        year = scp_card.get('year', '').lower()
+        
+        score = 0.0
+        
+        # Check for player name (most important)
+        if player and player in listing_title:
+            score += 0.5
+        
+        # Check for set name
+        if card_set and any(word in listing_title for word in card_set.split()):
+            score += 0.3
+        
+        # Check for year
+        if year and year in listing_title:
+            score += 0.2
+        
+        # Bonus: Check for card-specific terms
+        card_terms = ['card', 'rookie', 'rc', 'prizm', 'chrome', 'topps', 'panini', 'fleer', 'psa', 'bgs']
+        matching_terms = sum(1 for term in card_terms if term in listing_title)
+        score += min(matching_terms * 0.05, 0.2)  # Up to 0.2 bonus
+        
+        return min(score, 1.0)  # Cap at 1.0
+    
+    def _build_ebay_query(self, user_query: str) -> str:
+        """
+        Build optimized eBay search query from user input
+        
+        Args:
+            user_query: Original user search query
+        
+        Returns:
+            Optimized eBay search string
+        """
+        query = user_query.strip()
+        
+        # Add "card" if not already present to filter out non-cards
+        if 'card' not in query.lower() and 'rc' not in query.lower():
+            query += " card"
+        
+        return query
