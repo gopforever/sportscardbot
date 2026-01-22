@@ -163,7 +163,7 @@ class SportsCardProClient:
             params['max_price'] = max_price
         
         try:
-            response = self._make_request('cards/search', params)
+            response = self._make_request('products', params)
             
             # Parse results
             cards = []
@@ -197,7 +197,8 @@ class SportsCardProClient:
         logger.info(f"Getting details for card: {card_id}")
         
         try:
-            response = self._make_request(f'cards/{card_id}')
+            params = {'id': card_id}
+            response = self._make_request('product', params)
             
             if isinstance(response, dict) and 'card' in response:
                 return self._parse_card(response['card'])
@@ -229,13 +230,10 @@ class SportsCardProClient:
         """
         logger.info(f"Getting sales history for card: {card_id} (last {days_back} days)")
         
-        params = {
-            'days': days_back,
-            'limit': limit
-        }
-        
         try:
-            response = self._make_request(f'cards/{card_id}/sales', params)
+            # Sales history is included in the product endpoint
+            params = {'id': card_id}
+            response = self._make_request('product', params)
             
             sales = []
             items = response.get('sales', []) if isinstance(response, dict) else response
@@ -268,7 +266,9 @@ class SportsCardProClient:
         logger.info(f"Getting market value for card: {card_id}")
         
         try:
-            response = self._make_request(f'cards/{card_id}/market-value')
+            # Market value is included in the product endpoint
+            params = {'id': card_id}
+            response = self._make_request('product', params)
             
             if isinstance(response, dict):
                 return {
