@@ -18,7 +18,7 @@ class SportsCardProClient:
     Documentation: https://www.sportscardspro.com/api-documentation
     """
     
-    BASE_URL = "https://api.sportscardspro.com/v1"
+    BASE_URL = "https://www.pricecharting.com/api"
     
     def __init__(self, api_key: str, rate_limit_per_min: int = 60):
         """
@@ -35,8 +35,6 @@ class SportsCardProClient:
         self.rate_limit_per_min = rate_limit_per_min
         self.session = requests.Session()
         self.session.headers.update({
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
             'User-Agent': 'SportsCardBot/1.0'
         })
         
@@ -59,6 +57,11 @@ class SportsCardProClient:
         
         # Note: Rate limiting is applied at method level
         # For per-instance rate limiting, consider using a decorator on __init__
+        
+        # Add API token to every request
+        if params is None:
+            params = {}
+        params['t'] = self.api_key
         
         url = f"{self.BASE_URL}/{endpoint}"
         
