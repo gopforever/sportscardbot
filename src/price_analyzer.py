@@ -199,10 +199,24 @@ class PriceAnalyzer:
         
         return df
     
+    def _is_sportscardpro_client(self, client) -> bool:
+        """
+        Check if the client is a Sports Card Pro client
+        
+        Args:
+            client: API client instance
+        
+        Returns:
+            True if Sports Card Pro client, False otherwise
+        """
+        # Import here to avoid circular dependency
+        from src.sportscardpro_client import SportsCardProClient
+        return isinstance(client, SportsCardProClient)
+    
     def analyze_by_keyword(
         self,
         keywords: List[str],
-        ebay_client,
+        client,
         config: Dict
     ) -> Dict[str, pd.DataFrame]:
         """
@@ -210,7 +224,7 @@ class PriceAnalyzer:
         
         Args:
             keywords: List of search keywords
-            ebay_client: eBayClient instance
+            client: API client instance (eBay or Sports Card Pro)
             config: Configuration dictionary
         
         Returns:
@@ -218,33 +232,41 @@ class PriceAnalyzer:
         """
         results = {}
         
+        # Check if we're using Sports Card Pro client
+        is_sportscardpro = self._is_sportscardpro_client(client)
+        
         for keyword in keywords:
             logger.info(f"Analyzing keyword: {keyword}")
             
             try:
-                # Search active listings
-                active_listings = ebay_client.search_active_listings(
-                    keywords=keyword,
-                    category_id=config.get('search', {}).get('categories', [None])[0],
-                    min_price=config.get('filters', {}).get('min_price'),
-                    max_price=config.get('filters', {}).get('max_price'),
-                    condition=config.get('filters', {}).get('condition'),
-                    listing_type=config.get('search', {}).get('listing_type', 'all'),
-                    max_results=config.get('api', {}).get('max_results', 100)
-                )
-                
-                # Search sold listings
-                sold_listings = ebay_client.search_sold_listings(
-                    keywords=keyword,
-                    category_id=config.get('search', {}).get('categories', [None])[0],
-                    days_back=config.get('analysis', {}).get('sold_days', 30),
-                    min_price=config.get('filters', {}).get('min_price'),
-                    max_price=config.get('filters', {}).get('max_price'),
-                    max_results=config.get('api', {}).get('max_results', 100)
-                )
-                
-                # Find opportunities
-                opportunities = self.find_opportunities(active_listings, sold_listings)
+                if is_sportscardpro:
+                    # Use Sports Card Pro API
+                    opportunities = self._analyze_sportscardpro(keyword, client, config)
+                else:
+                    # Use eBay API (legacy)
+                    # Search active listings
+                    active_listings = client.search_active_listings(
+                        keywords=keyword,
+                        category_id=config.get('search', {}).get('categories', [None])[0],
+                        min_price=config.get('filters', {}).get('min_price'),
+                        max_price=config.get('filters', {}).get('max_price'),
+                        condition=config.get('filters', {}).get('condition'),
+                        listing_type=config.get('search', {}).get('listing_type', 'all'),
+                        max_results=config.get('api', {}).get('max_results', 100)
+                    )
+                    
+                    # Search sold listings
+                    sold_listings = client.search_sold_listings(
+                        keywords=keyword,
+                        category_id=config.get('search', {}).get('categories', [None])[0],
+                        days_back=config.get('analysis', {}).get('sold_days', 30),
+                        min_price=config.get('filters', {}).get('min_price'),
+                        max_price=config.get('filters', {}).get('max_price'),
+                        max_results=config.get('api', {}).get('max_results', 100)
+                    )
+                    
+                    # Find opportunities
+                    opportunities = self.find_opportunities(active_listings, sold_listings)
                 
                 if not opportunities.empty:
                     results[keyword] = opportunities
@@ -254,6 +276,110 @@ class PriceAnalyzer:
                 continue
         
         return results
+    
+    def _analyze_sportscardpro(
+        self,
+        keyword: str,
+        client,
+        config: Dict
+    ) -> pd.DataFrame:
+        """
+        Analyze opportunities using Sports Card Pro API
+        
+        Args:
+            keyword: Search keyword
+            client: SportsCardProClient instance
+            config: Configuration dictionary
+        
+        Returns:
+            DataFrame with opportunities sorted by discount percentage
+        """
+        # Search for cards
+        cards = client.search_cards(
+            query=keyword,
+            sport=config.get('search', {}).get('sport'),
+            player=config.get('search', {}).get('player'),
+            year=config.get('search', {}).get('year'),
+            card_set=config.get('search', {}).get('set'),
+            grade=config.get('filters', {}).get('grade'),
+            grading_company=config.get('filters', {}).get('grading_company'),
+            min_price=config.get('filters', {}).get('min_price'),
+            max_price=config.get('filters', {}).get('max_price'),
+            limit=config.get('api', {}).get('max_results', 100)
+        )
+        
+        if not cards:
+            logger.warning(f"No cards found for keyword: {keyword}")
+            return pd.DataFrame()
+        
+        logger.info(f"Found {len(cards)} cards for keyword: {keyword}")
+        
+        # Analyze each card for opportunities
+        opportunities = []
+        
+        for card in cards:
+            try:
+                # Get market value from Sports Card Pro
+                market_value = card.get('market_value', 0)
+                current_price = card.get('price', 0)
+                
+                if market_value <= 0 or current_price <= 0:
+                    continue
+                
+                # Calculate discount
+                discount_pct = ((market_value - current_price) / market_value) * 100
+                
+                # Check if it meets threshold
+                if discount_pct >= self.discount_threshold:
+                    # Get additional details if needed
+                    card_id = card.get('card_id')
+                    market_stats = None
+                    
+                    if card_id:
+                        market_stats = client.get_market_value(card_id)
+                    
+                    potential_profit = market_value - current_price
+                    
+                    opportunities.append({
+                        'title': card.get('title', 'Unknown Card'),
+                        'active_price': current_price,
+                        'market_value': market_value,
+                        'avg_sold_price': market_stats.get('average', market_value) if market_stats else market_value,
+                        'median_sold_price': market_stats.get('median', market_value) if market_stats else market_value,
+                        'discount_pct': discount_pct,
+                        'potential_profit': potential_profit,
+                        'profit_margin': (potential_profit / current_price) * 100,
+                        'url': f"https://www.sportscardspro.com/card/{card_id}" if card_id else '',
+                        'image_url': card.get('image_url', ''),
+                        'condition': f"{card.get('grading_company', '')} {card.get('grade', '')}".strip() or 'Raw',
+                        'seller': 'Sports Card Pro',
+                        'listing_type': 'Market Data',
+                        'sold_comps': market_stats.get('sample_size', 0) if market_stats else 0,
+                        'price_std_dev': market_stats.get('std_dev', 0) if market_stats else 0,
+                        'player': card.get('player', ''),
+                        'sport': card.get('sport', ''),
+                        'year': card.get('year', ''),
+                        'set': card.get('set', ''),
+                        'card_number': card.get('card_number', ''),
+                    })
+                    
+            except Exception as e:
+                logger.warning(f"Failed to analyze card: {str(e)}")
+                continue
+        
+        # Create DataFrame
+        if not opportunities:
+            logger.info(f"No opportunities found for keyword: {keyword}")
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(opportunities)
+        
+        # Sort by discount percentage
+        df = df.sort_values('discount_pct', ascending=False)
+        
+        logger.info(f"Found {len(df)} opportunities for keyword: {keyword}")
+        
+        return df
     
     def get_summary_stats(self, opportunities_df: pd.DataFrame) -> Dict:
         """
